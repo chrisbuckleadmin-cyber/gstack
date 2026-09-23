@@ -20,11 +20,12 @@
  * Periodic tier: model-behavior, non-deterministic.
  */
 
-import { describe, test, expect } from 'bun:test';
+import { test, expect } from 'bun:test';
+import { CAPTURE_MS, CAPTURE_LONG_MS } from './helpers/eval-budgets';
+import { describeE2ETier } from './helpers/e2e-gate';
 import { runPlanSkillObservation } from './helpers/claude-pty-runner';
 
-const shouldRun = !!process.env.EVALS && process.env.EVALS_TIER === 'periodic';
-const describeE2E = shouldRun ? describe : describe.skip;
+const describeE2E = describeE2ETier('periodic');
 
 const FLAWED_PLAN = `# Plan: add a "developer-friendly" pricing tier
 
@@ -46,7 +47,10 @@ describeE2E('Conductor renders decisions as prose (periodic)', () => {
       extraArgs: ['--disallowedTools', 'AskUserQuestion'],
       env: { CONDUCTOR_WORKSPACE_PATH: '/tmp/conductor-prose-e2e' },
       initialPlanContent: FLAWED_PLAN,
-      timeoutMs: 300_000,
+      // A judge can mistake a streaming partial option for a waiting brief.
+      // Keep observing until the independent prose evidence is available.
+      requireProseEvidence: true,
+      timeoutMs: CAPTURE_MS,
     });
 
     // The decision must reach the human as prose. 'silent_write' (wrote findings
@@ -64,6 +68,9 @@ describeE2E('Conductor renders decisions as prose (periodic)', () => {
       );
     }
     // A prose-rendered decision brief was observed at some point in the run.
-    expect(obs.proseAUQEverObserved).toBe(true);
-  }, 360_000);
+    expect(obs.proseAUQEverObserved,
+      `Conductor prose decision not observed: outcome=${obs.outcome}\n` +
+      `summary: ${obs.summary}\n--- evidence ---\n${obs.evidence}`,
+    ).toBe(true);
+  }, CAPTURE_LONG_MS);
 });
